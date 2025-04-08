@@ -1,0 +1,61 @@
+# Para poder utilizar las peticiones que están aquí debe instalar la extensión 
+# REST Client. Al abrir el proyecto con Visual Studio Code debería aparecerle un
+# mensaje para poder instalarlo. 
+# Para utilizar la petición con la extensión instalada, puedes utilizar los botones
+# "Send Request"
+# Este archivo hace uso de variables. Para saber como funcionan vea la 
+# documentación de REST Client.
+# Si está montando el proyecto en la nube, recuerde cambiar la url base a continuación
+
+@base = http://localhost:3000
+
+###
+
+# @name login
+@authToken = {{login.response.body.token}}
+# Para loguearse con usuario y contraseña
+POST {{base}}/api/auth/login HTTP/1.1
+Content-Type: application/json
+
+{
+	"username": "admin",
+	"password": "password123"
+}
+
+###
+
+# Debe poder ver los recordatorions (Inicialmente vacío). Recordar enviar el token entregado en 
+# el login con la cabecera X-Authorization
+GET {{base}}/api/reminders HTTP/1.1
+X-Authorization: {{authToken}}
+
+###
+
+# @name createReminder
+@reminderId = {{createReminder.response.body.id}}
+# Debe poder crear un recordatorio
+POST {{base}}/api/reminders HTTP/1.1
+Content-Type: application/json
+X-Authorization: {{authToken}}
+
+{
+	"content": "Recuérdame"
+}
+
+###
+
+# Debe poder actualizar parcialmente un recordatorio (Recordar usar un id que ya exista)
+PATCH {{base}}/api/reminders/{{reminderId}} HTTP/1.1
+Content-Type: application/json
+X-Authorization: {{authToken}}
+
+{
+	"content": "Debo de recordar no olvidar este recordatorio",
+	"important": true
+}
+
+###
+
+# Debe poder borrar un recordatorio
+DELETE {{base}}/api/reminders/{{reminderId}} HTTP/1.1
+X-Authorization: {{authToken}}

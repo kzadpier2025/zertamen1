@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Recordatorios</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@unocss/reset/tailwind.min.css"
+    />
+    <link rel="stylesheet" href="/css/uno.css" />
+    <script src="https://unpkg.com/vue@3.4.21/dist/vue.global.js"></script>
+    <style>
+      [v-cloak] {
+        display: none;
+      }
+
+      .v-enter-from,
+      .v-leave-to {
+        opacity: 0;
+      }
+
+      .v-enter-active,
+      .v-leave-active {
+        transition: opacity 0.5s ease-in-out;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app" class="py-6" un-cloak v-cloak>
+      <transition mode="out-in">
+        <div v-if="!user" class="w-full max-w-300px mx-auto">
+          <form
+            @submit.prevent="login"
+            class="grid grid-flow-row mx-auto p-3 border rounded shadow-md"
+          >
+            <label class="mb-3">
+              Usuario:
+              <input
+                v-model="username"
+                class="block border border-gray w-full"
+              />
+            </label>
+            <label class="mb-3">
+              Contraseña:
+              <input
+                v-model="password"
+                type="password"
+                class="block border border-gray w-full"
+              />
+            </label>
+            <button type="submit" class="bg-blue text-white rounded">
+              Ingresar
+            </button>
+          </form>
+        </div>
+        <div
+          v-else
+          class="max-w-500px w-full p-3 bg-blue-200 rounded shadow-md mx-auto grid grid-flow-row"
+        >
+          <div class="mb-3 flex justify-between">
+            <h2>Hola {{ user.name }} ({{ user.username }})</h2>
+            <button @click="logout">Logout</button>
+          </div>
+
+					<form @submit.prevent="addReminder" class="mb-3">
+						<input
+							v-model="content"
+							class="mb-3 px-3 py-2 rounded border border-gray-200 w-full"
+							placeholder="Escribe un recordatorio..."
+							required
+							maxlength="120"
+						/>
+						<label>
+							Importante: 
+							<input v-model="important" type="checkbox" />
+						</label>
+					</form>
+
+          <ul>
+            <li
+              v-for="reminder of orderedReminders"
+              :key="reminder.id"
+              
+            >
+							<time>{{ new Date(reminder.createdAt).toLocaleString() }}</time>
+							<div class="grid grid-cols-[1fr_auto_20px] gap-3 mb-3">
+								<input
+									:value="reminder.content"
+									@keyup.enter="changeContent(reminder, $event)"
+									@blur="changeContent(reminder, $event)"
+									class="rounded px-2 py-1"
+								/>
+								<label>
+									Importante: 
+									<input
+										type="checkbox"
+										:checked="reminder.important"
+										@change="toggleImportant(reminder, $event)"
+									/>
+								</label>
+								<button type="button" @click="deleteReminder(reminder)">X</button>
+							</div>
+            </li>
+          </ul>
+        </div>
+      </transition>
+    </div>
+    <script>
+      const { createApp, ref, computed, onMounted } = Vue;
+
+      createApp({
+        setup() {
+          const username = ref("");
+          const password = ref("");
+          const content = ref("");
+					const important = ref(false);
+          const reminders = ref([]);
+          const page = ref(0);
+          const user = ref(null);
+					const orderedReminders = computed(() => {
+						return reminders.value.toSorted((a, b) => {
+							if (a.important && !b.important)  {
+								return -1;
+							}
+							else if (!a.important && b.important) {
+								return 1;
+							}
+							return a.createdAt - b.createdAt;
+						})
+					});
+
+          function myfetch(route, method, body) {
+            const options = {
+              method,
+              headers: {
+                "Content-Type": "application/json",
+              },
+            };
+
+            if (body) {
+              options.body = JSON.stringify(body);
+            }
+
+            if (user.value) {
+              options.headers["X-Authorization"] = user.value.token;
+            }
+
+            return fetch(route, options).then(async (response) => {
+              if (response.ok) {
+                return response.status === 204 ? null : response.json();
+              }
+
+              if (response.status === 401) {
+                user.value = null;
+                localStorage.removeItem("user");
+              }
+
+              const json = await response.json();
+
+              if (json.error) {
+                throw new Error(json.error);
+              }
+
+              throw new Error("Error desconocido");
+            });
+          }
+
+          function get(route, body) {
+            return myfetch(route, "GET", undefined);
+          }
+
+          function post(route, body) {
+            return myfetch(route, "POST", body);
+          }
+
+          function patch(route, body) {
+            return myfetch(route, "PATCH", body);
+          }
+
+          function remove(route, body) {
+            return myfetch(route, "DELETE", body);
+          }
+
+          async function afterLogin(loggedUser) {
+            user.value = loggedUser;
+            reminders.value = await get("/api/reminders");
+          }
+
+          async function login() {
+            const loggedUser = await post("/api/auth/login", {
+              username: username.value,
+              password: password.value,
+            });
+            localStorage.setItem("user", JSON.stringify(loggedUser));
+            afterLogin(loggedUser);
+          }
+
+          async function logout() {
+            //await post("/api/auth/logout");
+            user.value = null;
+            localStorage.removeItem("user");
+          }
+
+          async function addReminder() {
+            const reminder = await post("/api/reminders", { content: content.value, important: important.value });
+            content.value = "";
+						important.value = false;
+            reminders.value.push(reminder);
+          }
+
+          async function toggleImportant(reminder, event) {
+            const id = reminder.id;
+            const important = event.target.checked;
+            const newReminder = await patch("/api/reminders/" + id, {
+              important,
+            });
+
+            const index = reminders.value.findIndex((reminder) => reminder.id === id);
+
+            if (index !== -1) {
+              reminders.value[index] = newReminder;
+            }
+          }
+
+          async function changeContent(reminder, event) {
+            const id = reminder.id;
+            const content = event.target.value;
+            const newReminder = await patch("/api/reminders/" + id, {
+              content,
+            });
+
+            const index = reminders.value.findIndex((reminder) => reminder.id === id);
+
+            if (index !== -1) {
+              reminders.value[index] = newReminder;
+            }
+          }
+
+          async function deleteReminder(reminder) {
+            await remove("/api/reminders/" + reminder.id);
+
+            const index = reminders.value.findIndex((t) => t.id === reminder.id);
+
+            if (index !== -1) {
+              reminders.value.splice(index, 1);
+            }
+          }
+
+          const localStorageUser = localStorage.getItem("user");
+
+          if (localStorageUser) {
+            afterLogin(JSON.parse(localStorageUser));
+          }
+
+          return {
+            username,
+            password,
+            content,
+						important,
+            user,
+            reminders,
+						orderedReminders,
+            login,
+            logout,
+            addReminder,
+            toggleImportant,
+            changeContent,
+            deleteReminder,
+          };
+        },
+      }).mount("#app");
+    </script>
+  </body>
+</html>
